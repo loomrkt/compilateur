@@ -127,7 +127,7 @@ typedef enum {
 
 typedef struct {
     TokenType type;
-    char value[32];
+    char value[256];
 } Token;
 
 typedef struct {
@@ -135,7 +135,7 @@ typedef struct {
     int pos;
     int start;
     int state;
-    char buffer[32];
+    char buffer[256];
 } Lexer;
 
 typedef enum {
@@ -146,30 +146,53 @@ typedef enum {
     STATE_IN_EQ,
     STATE_IN_NEQ,
     STATE_IN_LT,
-    STATE_IN_GT
+    STATE_IN_GT,
+    STATE_IN_PLUS,
+    STATE_IN_MINUS,
+    STATE_IN_MULT,
+    STATE_IN_DIV,
+    STATE_IN_MOD,
+    STATE_IN_BIT_AND,
+    STATE_IN_BIT_OR,
+    STATE_IN_XOR,
+    STATE_IN_NOT,
+    STATE_IN_SHL,
+    STATE_IN_SHR,
+    STATE_IN_STRING,
+    STATE_IN_CHAR,
+    STATE_IN_PREPROC
 } LexerState;
 
-int is_keyword(const char* str) {
-    static const char* keywords[] = {
-        "if", "else", "while", "for", "do", "return", "break", "continue",
-        "switch", "case", "default", "typedef", "struct", "enum", "union",
-        "const", "volatile", "sizeof", "int", "float", "char", "void", "short",
-        "long", "double", "signed", "unsigned"
-    };
-    
-    size_t num_keywords = sizeof(keywords) / sizeof(keywords[0]);
+/* Liste des mots-clés avec leurs tokens associés */
+static const struct {
+    const char* keyword;
+    TokenType token;
+} keywords[] = {
+    {"if", TOK_IF}, {"else", TOK_ELSE}, {"while", TOK_WHILE},
+    {"for", TOK_FOR}, {"do", TOK_DO}, {"return", TOK_RETURN},
+    {"break", TOK_BREAK}, {"continue", TOK_CONTINUE},
+    {"switch", TOK_SWITCH}, {"case", TOK_CASE}, {"default", TOK_DEFAULT},
+    {"typedef", TOK_TYPEDEF}, {"struct", TOK_STRUCT}, {"enum", TOK_ENUM},
+    {"union", TOK_UNION}, {"const", TOK_CONST}, {"volatile", TOK_VOLATILE},
+    {"sizeof", TOK_SIZEOF}, {"int", TOK_KW_INT}, {"float", TOK_KW_FLOAT},
+    {"char", TOK_KW_CHAR}, {"void", TOK_KW_VOID}, {"short", TOK_KW_SHORT},
+    {"long", TOK_KW_LONG}, {"double", TOK_KW_DOUBLE}, {"signed", TOK_KW_SIGNED},
+    {"unsigned", TOK_KW_UNSIGNED}
+};
 
+int is_keyword(const char* str) {
+    size_t num_keywords = sizeof(keywords) / sizeof(keywords[0]);
     for (size_t i = 0; i < num_keywords; i++) {
-        if (strcmp(str, keywords[i]) == 0) return 1;
+        if (strcmp(str, keywords[i].keyword) == 0) return keywords[i].token;
     }
-    return 0;
+    return TOK_ID; // Return TOK_ID if not a keyword
 }
 
 Token* create_token(TokenType type, const char* value) {
     Token* tok = malloc(sizeof(Token));
     tok->type = type;
-    strncpy(tok->value, value, 31);
-    tok->value[31] = '\0';
+    strncpy(tok->value, value, 255);
+    tok->value[255] = '\0';
     return tok;
 }
 
@@ -179,22 +202,22 @@ Lexer* create_lexer(const char* input) {
     lex->pos = 0;
     lex->start = 0;
     lex->state = STATE_START;
+    lex->buffer[0] = '\0';
     return lex;
 }
 
 void reset_lexer(Lexer* lex) {
-    memset(lex->buffer, 0, 32);
+    memset(lex->buffer, 0, sizeof(lex->buffer));
     lex->start = lex->pos;
 }
 
 Token* next_token(Lexer* lex) {
     Token* tok = NULL;
-    int float_point = 0;
     
-    while(1) {
+    while (1) {
         char c = lex->input[lex->pos];
         
-        switch(lex->state) {
+        switch (lex->state) {
             case STATE_START:
                 if (c == '\0') {
                     return create_token(TOK_END, "");
@@ -208,66 +231,48 @@ Token* next_token(Lexer* lex) {
                     lex->buffer[0] = c;
                     lex->buffer[1] = '\0';
                     lex->pos++;
-                }
-                else if (isdigit(c)) {
+                } else if (isdigit(c)) {
                     lex->state = STATE_IN_INT;
                     lex->buffer[0] = c;
                     lex->buffer[1] = '\0';
                     lex->pos++;
-                }
-                else switch(c) {
+                } else switch (c) {
+                    case '+':
+                        lex->state = STATE_IN_PLUS;
+                        lex->pos++;
+                        break;
+                    case '-':
+                        lex->state = STATE_IN_MINUS;
+                        lex->pos++;
+                        break;
+                    case '*':
+                        tok = create_token(TOK_MULT, "*");
+                        lex->pos++;
+                        return tok;
+                    case '/':
+                        tok = create_token(TOK_DIV, "/");
+                        lex->pos++;
+                        return tok;
                     case '%':
-                    tok = create_token(TOK_MOD, "%");
-                    lex->pos++;
-                    break;
+                        tok = create_token(TOK_MOD, "%");
+                        lex->pos++;
+                        return tok;
                     case '&':
-                    tok = create_token(TOK_BIT_AND, "&");
-                    lex->pos++;
-                    break;
+                        lex->state = STATE_IN_BIT_AND;
+                        lex->pos++;
+                        break;
                     case '|':
-                    tok = create_token(TOK_BIT_OR, "|");
-                    lex->pos++;
-                    break;
+                        lex->state = STATE_IN_BIT_OR;
+                        lex->pos++;
+                        break;
                     case '^':
-                    tok = create_token(TOK_BIT_XOR, "^");
-                    lex->pos++;
-                    break;
+                        tok = create_token(TOK_BIT_XOR, "^");
+                        lex->pos++;
+                        return tok;
                     case '~':
-                    tok = create_token(TOK_BIT_NOT, "~");
-                    lex->pos++;
-                    break;
-                    case '[':
-                    tok = create_token(TOK_LBRACKET, "[");
-                    lex->pos++;
-                    break;
-                    case ']':
-                    tok = create_token(TOK_RBRACKET, "]");
-                    lex->pos++;
-                    break;
-                    case ',':
-                    tok = create_token(TOK_COMMA, ",");
-                    lex->pos++;
-                    break;
-                    case ':':
-                    tok = create_token(TOK_COLON, ":");
-                    lex->pos++;
-                    break;
-                    case '?':
-                    tok = create_token(TOK_QUESTION, "?");
-                    lex->pos++;
-                    break;
-                    case '.':
-                    tok = create_token(TOK_DOT, ".");
-                    lex->pos++;
-                    break;
-                    case '=':
-                        lex->state = STATE_IN_EQ;
+                        tok = create_token(TOK_BIT_NOT, "~");
                         lex->pos++;
-                        break;
-                    case '!':
-                        lex->state = STATE_IN_NEQ;
-                        lex->pos++;
-                        break;
+                        return tok;
                     case '<':
                         lex->state = STATE_IN_LT;
                         lex->pos++;
@@ -276,45 +281,77 @@ Token* next_token(Lexer* lex) {
                         lex->state = STATE_IN_GT;
                         lex->pos++;
                         break;
-                    case '+':
-                        tok = create_token(TOK_PLUS, "+");
+                    case '=':
+                        lex->state = STATE_IN_EQ;
                         lex->pos++;
                         break;
-                    case '-':
-                        tok = create_token(TOK_MINUS, "-");
+                    case '!':
+                        lex->state = STATE_IN_NEQ;
                         lex->pos++;
                         break;
-                    case '*':
-                        tok = create_token(TOK_MULT, "*");
+                    case '"':
+                        lex->state = STATE_IN_STRING;
+                        lex->buffer[0] = '\0'; // Reset buffer
                         lex->pos++;
                         break;
-                    case '/':
-                        tok = create_token(TOK_DIV, "/");
+                    case '\'':
+                        lex->state = STATE_IN_CHAR;
+                        lex->buffer[0] = '\0'; // Reset buffer
                         lex->pos++;
                         break;
-                    case '(':
-                        tok = create_token(TOK_LPAREN, "(");
-                        lex->pos++;
-                        break;
-                    case ')':
-                        tok = create_token(TOK_RPAREN, ")");
-                        lex->pos++;
-                        break;
-                    case '{':
-                        tok = create_token(TOK_LBRACE, "{");
-                        lex->pos++;
-                        break;
-                    case '}':
-                        tok = create_token(TOK_RBRACE, "}");
+                    case '#':
+                        lex->state = STATE_IN_PREPROC;
+                        lex->buffer[0] = '\0'; // Reset buffer
                         lex->pos++;
                         break;
                     case ';':
                         tok = create_token(TOK_SEMICOLON, ";");
                         lex->pos++;
-                        break;
+                        return tok;
+                    case ',':
+                        tok = create_token(TOK_COMMA, ",");
+                        lex->pos++;
+                        return tok;
+                    case '(':
+                        tok = create_token(TOK_LPAREN, "(");
+                        lex->pos++;
+                        return tok;
+                    case ')':
+                        tok = create_token(TOK_RPAREN, ")");
+                        lex->pos++;
+                        return tok;
+                    case '{':
+                        tok = create_token(TOK_LBRACE, "{");
+                        lex->pos++;
+                        return tok;
+                    case '}':
+                        tok = create_token(TOK_RBRACE, "}");
+                        lex->pos++;
+                        return tok;
+                    case '[':
+                        tok = create_token(TOK_LBRACKET, "[");
+                        lex->pos++;
+                        return tok;
+                    case ']':
+                        tok = create_token(TOK_RBRACKET, "]");
+                        lex->pos++;
+                        return tok;
+                    case ':':
+                        tok = create_token(TOK_COLON, ":");
+                        lex->pos++;
+                        return tok;
+                    case '?':
+                        tok = create_token(TOK_QUESTION, "?");
+                        lex->pos++;
+                        return tok;
+                    case '.':
+                        tok = create_token(TOK_DOT, ".");
+                        lex->pos++;
+                        return tok;
                     default:
                         tok = create_token(TOK_UNKNOWN, &c);
                         lex->pos++;
+                        return tok;
                 }
                 break;
 
@@ -323,38 +360,7 @@ Token* next_token(Lexer* lex) {
                     strncat(lex->buffer, &c, 1);
                     lex->pos++;
                 } else {
-                    // Dans le case STATE_IN_ID :
-                    if (is_keyword(lex->buffer)) {
-                        if (strcmp(lex->buffer, "if") == 0) tok = create_token(TOK_IF, lex->buffer);
-                        else if (strcmp(lex->buffer, "else") == 0) tok = create_token(TOK_ELSE, lex->buffer);
-                        else if (strcmp(lex->buffer, "while") == 0) tok = create_token(TOK_WHILE, lex->buffer);
-                        else if (strcmp(lex->buffer, "for") == 0) tok = create_token(TOK_FOR, lex->buffer);
-                        else if (strcmp(lex->buffer, "do") == 0) tok = create_token(TOK_DO, lex->buffer);
-                        else if (strcmp(lex->buffer, "return") == 0) tok = create_token(TOK_RETURN, lex->buffer);
-                        else if (strcmp(lex->buffer, "break") == 0) tok = create_token(TOK_BREAK, lex->buffer);
-                        else if (strcmp(lex->buffer, "continue") == 0) tok = create_token(TOK_CONTINUE, lex->buffer);
-                        else if (strcmp(lex->buffer, "switch") == 0) tok = create_token(TOK_SWITCH, lex->buffer);
-                        else if (strcmp(lex->buffer, "case") == 0) tok = create_token(TOK_CASE, lex->buffer);
-                        else if (strcmp(lex->buffer, "default") == 0) tok = create_token(TOK_DEFAULT, lex->buffer);
-                        else if (strcmp(lex->buffer, "typedef") == 0) tok = create_token(TOK_TYPEDEF, lex->buffer);
-                        else if (strcmp(lex->buffer, "struct") == 0) tok = create_token(TOK_STRUCT, lex->buffer);
-                        else if (strcmp(lex->buffer, "enum") == 0) tok = create_token(TOK_ENUM, lex->buffer);
-                        else if (strcmp(lex->buffer, "union") == 0) tok = create_token(TOK_UNION, lex->buffer);
-                        else if (strcmp(lex->buffer, "const") == 0) tok = create_token(TOK_CONST, lex->buffer);
-                        else if (strcmp(lex->buffer, "volatile") == 0) tok = create_token(TOK_VOLATILE, lex->buffer);
-                        else if (strcmp(lex->buffer, "sizeof") == 0) tok = create_token(TOK_SIZEOF, lex->buffer);
-                        else if (strcmp(lex->buffer, "int") == 0) tok = create_token(TOK_KW_INT, lex->buffer);
-                        else if (strcmp(lex->buffer, "float") == 0) tok = create_token(TOK_KW_FLOAT, lex->buffer);
-                        else if (strcmp(lex->buffer, "char") == 0) tok = create_token(TOK_KW_CHAR, lex->buffer);
-                        else if (strcmp(lex->buffer, "void") == 0) tok = create_token(TOK_KW_VOID, lex->buffer);
-                        else if (strcmp(lex->buffer, "short") == 0) tok = create_token(TOK_KW_SHORT, lex->buffer);
-                        else if (strcmp(lex->buffer, "long") == 0) tok = create_token(TOK_KW_LONG, lex->buffer);
-                        else if (strcmp(lex->buffer, "double") == 0) tok = create_token(TOK_KW_DOUBLE, lex->buffer);
-                        else if (strcmp(lex->buffer, "signed") == 0) tok = create_token(TOK_KW_SIGNED, lex->buffer);
-                        else if (strcmp(lex->buffer, "unsigned") == 0) tok = create_token(TOK_KW_UNSIGNED, lex->buffer);
-                    } else {
-                        tok = create_token(TOK_ID, lex->buffer);
-                    }
+                    tok = create_token(is_keyword(lex->buffer), lex->buffer);
                     lex->state = STATE_START;
                 }
                 break;
@@ -389,6 +395,7 @@ Token* next_token(Lexer* lex) {
                     lex->pos++;
                 } else {
                     tok = create_token(TOK_ASSIGN, "=");
+                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -398,7 +405,8 @@ Token* next_token(Lexer* lex) {
                     tok = create_token(TOK_NEQ, "!=");
                     lex->pos++;
                 } else {
-                    tok = create_token(TOK_UNKNOWN, "!");
+                    tok = create_token(TOK_LOGICAL_NOT, "!");
+                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -407,8 +415,12 @@ Token* next_token(Lexer* lex) {
                 if (c == '=') {
                     tok = create_token(TOK_LTE, "<=");
                     lex->pos++;
+                } else if (c == '<') {
+                    tok = create_token(TOK_SHL, "<<");
+                    lex->pos++;
                 } else {
                     tok = create_token(TOK_LT, "<");
+                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -417,8 +429,121 @@ Token* next_token(Lexer* lex) {
                 if (c == '=') {
                     tok = create_token(TOK_GTE, ">=");
                     lex->pos++;
+                } else if (c == '>') {
+                    tok = create_token(TOK_SHR, ">>");
+                    lex->pos++;
                 } else {
                     tok = create_token(TOK_GT, ">");
+                    lex->pos--;
+                }
+                lex->state = STATE_START;
+                break;
+
+            case STATE_IN_PLUS:
+                if (c == '+') {
+                    tok = create_token(TOK_INC, "++");
+                    lex->pos++;
+                } else if (c == '=') {
+                    tok = create_token(TOK_ADD_ASSIGN, "+=");
+                    lex->pos++;
+                } else {
+                    tok = create_token(TOK_PLUS, "+");
+                    lex->pos--;
+                }
+                lex->state = STATE_START;
+                break;
+
+            case STATE_IN_MINUS:
+                if (c == '-') {
+                    tok = create_token(TOK_DEC, "--");
+                    lex->pos++;
+                } else if (c == '=') {
+                    tok = create_token(TOK_SUB_ASSIGN, "-=");
+                    lex->pos++;
+                } else if (c == '>') {
+                    tok = create_token(TOK_ARROW, "->");
+                    lex->pos++;
+                } else {
+                    tok = create_token(TOK_MINUS, "-");
+                    lex->pos--;
+                }
+                lex->state = STATE_START;
+                break;
+
+            case STATE_IN_BIT_AND:
+                if (c == '&') {
+                    tok = create_token(TOK_LOGICAL_AND, "&&");
+                    lex->pos++;
+                } else if (c == '=') {
+                    tok = create_token(TOK_AND_ASSIGN, "&=");
+                    lex->pos++;
+                } else {
+                    tok = create_token(TOK_BIT_AND, "&");
+                    lex->pos--;
+                }
+                lex->state = STATE_START;
+                break;
+
+            case STATE_IN_BIT_OR:
+                if (c == '|') {
+                    tok = create_token(TOK_LOGICAL_OR, "||");
+                    lex->pos++;
+                } else if (c == '=') {
+                    tok = create_token(TOK_OR_ASSIGN, "|=");
+                    lex->pos++;
+                } else {
+                    tok = create_token(TOK_BIT_OR, "|");
+                    lex->pos--;
+                }
+                lex->state = STATE_START;
+                break;
+
+            case STATE_IN_STRING:
+                if (c == '"') {
+                    tok = create_token(TOK_STRING_LIT, lex->buffer);
+                    lex->pos++;
+                    lex->state = STATE_START;
+                } else if (c == '\\') {
+                    lex->pos++;
+                    c = lex->input[lex->pos];
+                    strncat(lex->buffer, &c, 1); // Handle escape sequences
+                    lex->pos++;
+                } else {
+                    strncat(lex->buffer, &c, 1);
+                    lex->pos++;
+                }
+                break;
+
+            case STATE_IN_CHAR:
+                if (c == '\'') {
+                    tok = create_token(TOK_CHAR_LIT, lex->buffer);
+                    lex->pos++;
+                    lex->state = STATE_START;
+                } else if (c == '\\') {
+                    lex->pos++;
+                    c = lex->input[lex->pos];
+                    strncat(lex->buffer, &c, 1); // Handle escape sequences
+                    lex->pos++;
+                } else {
+                    strncat(lex->buffer, &c, 1);
+                    lex->pos++;
+                }
+                break;
+
+            case STATE_IN_PREPROC:
+                while (isalnum(c)) {
+                    strncat(lex->buffer, &c, 1);
+                    lex->pos++;
+                    c = lex->input[lex->pos];
+                }
+                if (strcmp(lex->buffer, "include") == 0) {
+                    tok = create_token(TOK_INCLUDE, "#include");
+                } else if (strcmp(lex->buffer, "define") == 0) {
+                    tok = create_token(TOK_DEFINE, "#define");
+                } else if (strcmp(lex->buffer, "ifdef") == 0) {
+                    tok = create_token(TOK_IFDEF, "#ifdef");
+                } else {
+                    tok = create_token(TOK_PREPROC, "#");
                 }
                 lex->state = STATE_START;
                 break;
