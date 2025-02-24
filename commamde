@@ -1,0 +1,5 @@
+gcc -c lexer.c -o lexer.o
+>> gcc -c utils.c -o utils.o
+>> gcc -c main.c -o main.o
+>> gcc lexer.o utils.o main.o -o analyseur
+>> ./analyseur

@@ -218,7 +218,6 @@ static void reset_lexer(Lexer* lex) {
                     lex->pos++;
                 } else {
                     tok = create_token(TOK_LOGICAL_NOT, "!");
-                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -229,7 +228,6 @@ static void reset_lexer(Lexer* lex) {
                     lex->pos++;
                 } else {
                     tok = create_token(TOK_LT, "<");
-                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -240,7 +238,6 @@ static void reset_lexer(Lexer* lex) {
                     lex->pos++;
                 } else {
                     tok = create_token(TOK_GT, ">");
-                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -251,7 +248,6 @@ static void reset_lexer(Lexer* lex) {
                     lex->pos++;
                 } else {
                     tok = create_token(TOK_PLUS, "+");
-                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
@@ -262,7 +258,6 @@ static void reset_lexer(Lexer* lex) {
                     lex->pos++;
                 } else {
                     tok = create_token(TOK_MINUS, "-");
-                    lex->pos--;
                 }
                 lex->state = STATE_START;
                 break;
